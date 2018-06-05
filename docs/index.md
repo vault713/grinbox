@@ -15,3 +15,5 @@ Our aim is to provide this service to the community for free, starting on Testne
 1. Download and build the Grinbox client.
 2. Configure your environment, register a Grinbox URL.
 3. Run Grinbox. A sender can now send a transaction to your Grinbox URL and Grinbox will relay it to your wallet, and communicate back to the sender.
+
+{% include subscription-form.html %}
