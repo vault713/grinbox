@@ -10,4 +10,4 @@ Our aim is to provide this service to the community for free, starting on Testne
 - **Private.** You no longer need to expose your IP address as part of the transaction building process. Senders can send grins to your grinbox.io/username. 
 - **Secure.** Grinbox cannot read or sign transactions on your behalf. Grinbox does not have access to your wallet or your grins. 
 
-## Subscribe to stay updated
+## Stay updated
