@@ -1,4 +1,3 @@
-## What's Grin?
 [Grin](https://grin-tech.org) is a blockchain-powered cryptocurrency that is an implementation of the MimbleWimble protocol, with a focus on privacy and scalability. In MimbleWimble, transactions are interactive, requiring the Sender and Recipient to interact over a single round trip in order to build the transaction.
 
 ## What's Grinbox?
