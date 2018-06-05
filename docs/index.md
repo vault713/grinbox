@@ -6,8 +6,8 @@ Grinbox facilitates the interactions required to build a valid Grin transaction 
 Our aim is to provide this service to the community for free, starting on Testnet2.
 
 ## Benefits
-- **Convenient.** You no longer need to be online in order to receive a transaction. Transactions are sent to your Grinbox, waiting for you to fetch them the next time you come online.
-- **Private.** You no longer need to expose your IP address as part of the transaction building process. Senders can send grins to your grinbox.io/username. 
+- **Convenient.** You don't need to be online in order to receive a transaction. Transactions are sent to your Grinbox, waiting for you to fetch them the next time you come online.
+- **Private.** You don't need to reveal your IP address or expose ports as part of the transaction building process. Senders can send grins to your grinbox.io/username. 
 - **Secure.** Grinbox cannot read or sign transactions on your behalf. Grinbox does not have access to your wallet or your grins. 
 
 ## Stay updated
