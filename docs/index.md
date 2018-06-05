@@ -1,6 +1,4 @@
-# Grinbox
-A transaction building service for [Grin](https://grin-tech.org), currently under development.
-Grin is a blockchain-powered cryptocurrency that is an implementation of the MimbleWimble protocol, with a focus on privacy and scalability.
+[Grin](https://grin-tech.org) is a blockchain-powered cryptocurrency that is an implementation of the MimbleWimble protocol, with a focus on privacy and scalability.
 
 In MimbleWimble, transactions are interactive, requiring the Sender and Recipient to interact over a single round trip in order to build the transaction. The purpose of Grinbox is to facilitate this interaction by acting as a non-trusted transaction relaying service that routes messages back and forth between senders and recipients. In its first incarnation, Grinbox will run as a terminal service on the Recipient's machine, fetching transactions from the Grinbox server and relaying them to the Grin wallet.
 
