@@ -3,7 +3,7 @@
 ## What's Grinbox?
 Grinbox facilitates the interactions required to build a valid Grin transaction by acting as a non-trusted relaying service that routes messages back and forth between senders and recipients. In its first incarnation, Grinbox will run as a terminal service on the Recipient's machine, fetching transactions from the Grinbox server and relaying them to the Grin wallet.
 
-Our aim is to provide this service to the community for free, starting on Testnet2.
+Our aim is to provide this service to the community for free, starting on Testnet3.
 
 ## Benefits
 - **Convenient.** You don't need to be online in order to receive a transaction. Transactions are sent to your Grinbox, waiting for you to fetch them the next time you come online.
