@@ -48,7 +48,7 @@ The hash value may rotate from time to time, forcing users to re-create a valid 
 To obtain the current hash from the relay service, use the following REST API:
 
 ```bash
-$ curl http://grinbox.io:3000/hash
+$ curl http://grinbox.io:13420/hash
 a48afabdb456cf1c85f107eb1e62f9f70fcc0520ca296e7d0167174d2b522af6
 ```
 
@@ -97,7 +97,7 @@ curl -i -X POST \
     -H "Grinbox-Signature: f477950d9f06e5bf3557b7970f3a6256d90f4d55b62c50c1585fe4731766f38c4db9646b3a117afad74007ec6c0015ca03d579a61bd263642e135cf5fa856d8d" \
     -H "Grinbox-Port-To: 0412b3c4c615fcfee9789c2753353e1b75aad876f5462eb46d48d0470bdb09d1e0f46e42172c0d40c341fd2c14075540f72e575dd38eb8d728db3da7867e70be85" \
     -H "Grinbox-Slate-TTL: 120" \
-    -d @LOCAL_SLATE_FILE http://grinbox.io:3000/slate
+    -d @LOCAL_SLATE_FILE http://grinbox.io:13420/slate
 ```
 
 Note that Alice needs to provide a number of grinbox headers to the post command:
@@ -117,7 +117,7 @@ curl -i \
     -H "Content-Type: application/json" \
     -H "Grinbox-Port-From: 0412b3c4c615fcfee9789c2753353e1b75aad876f5462eb46d48d0470bdb09d1e0f46e42172c0d40c341fd2c14075540f72e575dd38eb8d728db3da7867e70be85" \
     -H "Grinbox-Signature: 20de7691c9c805401312f125cd3a8ab8573e64893090efa6836dd41be9f8b3bd1d3a0341893ef68e55d0bc8ea311839c8c7bf7898fdaf4579b2db4ef6b0c19c8" \
-    http://grinbox.io:3000/slate
+    http://grinbox.io:13420/slate
 ```
 
 Note that Bob needs to provide a number of grinbox headers to the GET command:
@@ -156,7 +156,7 @@ curl -i
     -H "Grinbox-Port-To: 0485508b11097452c61a2647851d5f7a3c19d10261ee973aee8ef587ee31f70b20a343dfe37c8f03eda3abcd440139c94c5c72ba7b81a3bc28fc699075ebac1338" \
     -H "Grinbox-Slate-TTL: 120" \
     -d @LOCAL_SLATE_RESPONSE_FILE \
-    http://grinbox.io:3000/slate
+    http://grinbox.io:13420/slate
 ```
 
 ## Helper REST API for key pair & signature generation
@@ -164,7 +164,7 @@ curl -i
 The following helper REST API can be used to generate the necessary keys and signatures to access a *relay port*:
 
 ```
-curl http://grinbox.io:3000/port
+curl http://grinbox.io:13420/port
 ```
 
 The response is a json containing the resulting new pair and signature:
