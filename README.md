@@ -31,12 +31,12 @@ const publicKey = secp256k1.publicKeyCreate(privateKey, false);
 
 Sample Private Key (hex)
 ```
-7d84f0c35abbdc64f5438ae3f0179e4768dd444505dcfcf0f3a8842b89beeef0`
+7d84f0c35abbdc64f5438ae3f0179e4768dd444505dcfcf0f3a8842b89beeef0
 ```
 
 Sample Public Key (hex), which doubles as the *relay port*
 ```
-046c3c115c3d1e61d3500e04c86059244b2fa80cd2111be72e225a7f21d8f65dca41429b5d0d37035081b98136bf3346560f48ba84bf26d5453660e2efc4fe0eb3`
+046c3c115c3d1e61d3500e04c86059244b2fa80cd2111be72e225a7f21d8f65dca41429b5d0d37035081b98136bf3346560f48ba84bf26d5453660e2efc4fe0eb3
 ```
 
 ## Signing
