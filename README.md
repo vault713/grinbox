@@ -22,11 +22,11 @@ Key pair generation is done on the client side using SECP256K1
 
 Sample code for key generation in Node.JS with SECP256K1 lib
 ```
-    let privateKey: Buffer;
-    do {
-      privateKey = randomBytes(32);
-    } while (!secp256k1.privateKeyVerify(privateKey));
-    const publicKey = secp256k1.publicKeyCreate(privateKey, false);
+let privateKey: Buffer;
+do {
+  privateKey = randomBytes(32);
+} while (!secp256k1.privateKeyVerify(privateKey));
+const publicKey = secp256k1.publicKeyCreate(privateKey, false);
 ```
 
 Sample Private Key (hex)
@@ -64,26 +64,28 @@ See below the generated signature (hex) for the private key and hash given above
 1a44ef050f92a13d8297201ee8f8199ef0f86ded647f059bcc519f89b1804e04169d2a583fa405dd92a95bfaf7ee5b4e3f0b25c3cd806b2c9372f861117aead7
 ```
 
+Sending invalid signatures to the relay GET/POST slate REST APIs (see below) will result in a 401 error.
+
 ## Post Slate
 
 Back to the example of Alice and Bob. Alice and Bob both have generated keys and signatures:
 
 Alice:
 ```
-  {
+{
     "publicKey": "0485508b11097452c61a2647851d5f7a3c19d10261ee973aee8ef587ee31f70b20a343dfe37c8f03eda3abcd440139c94c5c72ba7b81a3bc28fc699075ebac1338",
     "privateKey": "4ef416c41d8c8c3807bd43cc8d0c908872a14c8307a23bf386ca621927c9fd53",
     "signature": "f477950d9f06e5bf3557b7970f3a6256d90f4d55b62c50c1585fe4731766f38c4db9646b3a117afad74007ec6c0015ca03d579a61bd263642e135cf5fa856d8d"
-  }
+}
 ```
 
 Bob:
 ```
-  {
+{
     "publicKey": "0412b3c4c615fcfee9789c2753353e1b75aad876f5462eb46d48d0470bdb09d1e0f46e42172c0d40c341fd2c14075540f72e575dd38eb8d728db3da7867e70be85",
     "privateKey": "5b4516d03695cde642fbbef2d8e6c56dea181f356740a9ae180f6043a31fe632",
     "signature": "20de7691c9c805401312f125cd3a8ab8573e64893090efa6836dd41be9f8b3bd1d3a0341893ef68e55d0bc8ea311839c8c7bf7898fdaf4579b2db4ef6b0c19c8"
-  }
+}
 ```
 
 Alice created a slate to send 50 grins to Bob and can now post the slate into the relay using POST slate REST API.
@@ -121,6 +123,8 @@ curl -i \
 Note that Bob needs to provide a number of grinbox headers to the GET command:
 1. Grinbox-Port-From - the public port from which to read the slate
 2. Grinbox-Signature - the proof that Bob indeed has access to read from port specified in 1
+
+Note the GET command will return the first available slate in Bob's queue. If the queue is empty a 404 is returned.
 
 In reply Bob gets the data he requires to process the slate:
 
