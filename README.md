@@ -111,7 +111,7 @@ Alice has created a transaction to send 50 grins to Bob, and has generated the s
 
 ```
 curl -i -X POST \
-    -H "Content-Type: application/json" \ 
+    -H "Content-Type: application/json" \
     -H "Grinbox-Port-From: 0485508b11097452c61a2647851d5f7a3c19d10261ee973aee8ef587ee31f70b20a343dfe37c8f03eda3abcd440139c94c5c72ba7b81a3bc28fc699075ebac1338" \
     -H "Grinbox-Signature: f477950d9f06e5bf3557b7970f3a6256d90f4d55b62c50c1585fe4731766f38c4db9646b3a117afad74007ec6c0015ca03d579a61bd263642e135cf5fa856d8d" \
     -H "Grinbox-Port-To: 0412b3c4c615fcfee9789c2753353e1b75aad876f5462eb46d48d0470bdb09d1e0f46e42172c0d40c341fd2c14075540f72e575dd38eb8d728db3da7867e70be85" \
