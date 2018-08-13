@@ -1,24 +1,43 @@
-## [Grinbox](http://grinbox.io) Relay Service
+# [Grinbox](http://grinbox.io) Relay Service
 
 [![Join the chat at https://gitter.im/vault713/grinbox](https://badges.gitter.im/vault713/grinbox.svg)](https://gitter.im/vault713/grinbox?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
-Grinbox relay service provides a simple way for 2 parties to exchange slates as part of the interactive building of a grin transaction.
+## Contents
+* [Introduction](#introduction)
+   + [What's Grinbox?](#what-s-grinbox-)
+* [Transaction flow overview](#transaction-flow-overview)
+* [Detailed usage information](#detailed-usage-information)
+   + [Private/Public Key Generation](#private-public-key-generation)
+   + [Signing](#signing)
+   + [Post Slate](#post-slate)
+   + [Get Slate](#get-slate)
+   + [Helper REST API for key pair & signature generation](#helper-rest-api-for-key-pair---signature-generation)
+* [License](#license)
 
-In order to communicate over the relay, each party has to be able to get pending slates from the relay from a dedicated *relay port*, and to post new slates to the relay to the other party's dedicated *relay port*. The *relay port* is identified by each party's public key.
+## Introduction
+[Grin](https://github.com/mimblewimble/grin) is a blockchain-powered cryptocurrency that is an implementation of the MimbleWimble protocol, with a focus on privacy and scalability. In MimbleWimble, transactions are interactive, requiring the Sender and Recipient to interact over a single round trip in order to build the transaction.
 
-Assuming Alice and Bob want to use the relay to build a transaction of 50 grins from Alice to Bob:
+### What's Grinbox?
+
+Grinbox provides a simple way for two parties to exchange transaction slates as part of building a transaction interactively.
+
+In order to communicate over the relay, each party has to be able to get pending slates from the relay from a dedicated *relay port*, and to post new slates to the relay to the other party's dedicated *relay port*. **The relay port is identified by each party's public key.**
+
+## Transaction flow overview
+Assuming Alice wants to send Bob 50 grins using the relay: 
 1. Alice creates a public/private key pair and an access signature to her dedicated *relay port*
 2. Bob creates a public/private key pair and an access signature to his dedicated *relay port*
 3. Bob sends Alice his public key
-4. Alice creates a slate for sending 50 grins to Bob and posts it into Bob's *relay port*
+4. Alice creates a slate for sending 50 grins to Bob and posts it to Bob's *relay port*, identified by the public key in the previous step
 5. Bob gets the slate from his *relay port* using his signature
 6. Bob processes the slate and posts the response into Alice's *relay port*
-7. Alice gets the slate using her signature
-8. Alice processes the slates and commits the transaction to grin
+7. Alice gets the slate from her *relay port* using her signature
+8. Alice finalises the transaction and broadcasts it to the Grin blockchain
 
-## Private/Public Key Generation
+## Detailed usage information
 
-Key pair generation is done on the client side using SECP256K1
+### Private/Public Key Generation
+Key pair generation is done on the client side using SECP256K1.
 
 Sample code for key generation in Node.JS with SECP256K1 lib
 ```
@@ -39,9 +58,9 @@ Sample Public Key (hex), which doubles as the *relay port*
 046c3c115c3d1e61d3500e04c86059244b2fa80cd2111be72e225a7f21d8f65dca41429b5d0d37035081b98136bf3346560f48ba84bf26d5453660e2efc4fe0eb3
 ```
 
-## Signing
+### Signing
 
-In order to get slates from the *relay port* for a given public key, a signature hash to be provided. The signature is a SECP256K1 ECDSA using the correspomding private key, where the message is a hash value (32byte) that can be obtained from the relay.
+In order to get slates from the *relay port* for a given public key, a signature hash needs to be provided. The signature is a SECP256K1 ECDSA using the corresponding private key, where the message is a 32-byte hash value that can be obtained from the relay.
 
 The hash value may rotate from time to time, forcing users to re-create a valid signature.
 
@@ -52,13 +71,13 @@ $ curl http://grinbox.io:13420/hash
 a48afabdb456cf1c85f107eb1e62f9f70fcc0520ca296e7d0167174d2b522af6
 ```
 
-Once the has is obtained signing is done by:
+Once the hash has been obtained, signing is done by:
 
 ```bash
 secp256k1.sign(hash, privateKey)
 ```
 
-See below the generated signature (hex) for the private key and hash given above:
+See below the generated signature (hex) given `hash` and `privateKey` as above:
 
 ```bash
 1a44ef050f92a13d8297201ee8f8199ef0f86ded647f059bcc519f89b1804e04169d2a583fa405dd92a95bfaf7ee5b4e3f0b25c3cd806b2c9372f861117aead7
@@ -66,9 +85,9 @@ See below the generated signature (hex) for the private key and hash given above
 
 Sending invalid signatures to the relay GET/POST slate REST APIs (see below) will result in a 401 error.
 
-## Post Slate
+### Post Slate
 
-Back to the example of Alice and Bob. Alice and Bob both have generated keys and signatures:
+Back to the example of Alice and Bob in the overview. Alice and Bob both have generated keys and signatures:
 
 Alice:
 ```
@@ -88,7 +107,7 @@ Bob:
 }
 ```
 
-Alice created a slate to send 50 grins to Bob and can now post the slate into the relay using POST slate REST API.
+Alice has created a transaction to send 50 grins to Bob, and has generated the slate (`<file>` in the [Grin documentation](https://github.com/mimblewimble/docs/wiki/How-to-use-grin#sending-and-receiving-grins-offline)) to post into the relay using POST slate REST API.
 
 ```
 curl -i -X POST \
@@ -101,14 +120,14 @@ curl -i -X POST \
 ```
 
 Note that Alice needs to provide a number of grinbox headers to the post command:
-1. Grinbox-Port-From - the public port originating the slate, this is where Bob can post a slate back to Alice
+1. Grinbox-Port-From - the public port originating the slate, this is where Bob can post a slate back to Alice in response
 2. Grinbox-Signature - the proof that Alice indeed has access to read from port specified in 1
 3. Grinbox-Port-To - Bob's public port where the slate would be posted
-4. Grinbox-Slate-TTL - the slate TTL in seconds, afterwhich the slate is not guaranteed to persist in the relay 
+4. Grinbox-Slate-TTL - the slate TTL in seconds, after which the slate is not guaranteed to persist in the relay 
 
-As well as to provide the slate json in the body of the message (i.e. @LOCAL_SLATE_FILE should point to a local slate file previously generated with `./grin wallet send -d LOCAL_FILE`)
+As well as to provide the slate json in the body of the message (i.e. @LOCAL_SLATE_FILE should point to the local slate file previously [generated through the Grin wallet](https://github.com/mimblewimble/docs/wiki/How-to-use-grin#sending-and-receiving-grins-offline)).
 
-## Get Slate
+### Get Slate
 
 Bob can now get the slate posted in his *relay port* by executing the following command:
 
@@ -124,9 +143,9 @@ Note that Bob needs to provide a number of grinbox headers to the GET command:
 1. Grinbox-Port-From - the public port from which to read the slate
 2. Grinbox-Signature - the proof that Bob indeed has access to read from port specified in 1
 
-Note the GET command will return the first available slate in Bob's queue. If the queue is empty a 404 is returned.
+Note that the GET command will return the first available slate in Bob's queue. If the queue is empty a 404 is returned.
 
-In reply Bob gets the data he requires to process the slate:
+In reply from the relay, Bob gets the data required to process the slate:
 
 ```
 HTTP/1.1 200 OK
@@ -141,9 +160,9 @@ Connection: keep-alive
 {}
 ```
 
-Note the slate is returned, along with a Grinbox-Port-From header which specify where Bob needs to post back the reply to, in this case, Alice's *relay port*.
+Note that the slate is returned, along with a Grinbox-Port-From header which specifies where Bob needs to post his response to, in this case, Alice's *relay port*.
 
-Bob will need to put the slate in a file, and run it through his grin wallet receive command to generate the response slate.
+Bob will need to save the slate to a file, and process it through the [receive command of his grin wallet](https://github.com/mimblewimble/docs/wiki/How-to-use-grin#sending-and-receiving-grins-offline) to generate the response slate.
 
 Once the slate response file is generated, Bob uses the POST slate command with the correct headers to POST the response back to Alice:
 
@@ -159,7 +178,7 @@ curl -i
     http://grinbox.io:13420/slate
 ```
 
-## Helper REST API for key pair & signature generation
+### Helper REST API for key pair & signature generation
 
 The following helper REST API can be used to generate the necessary keys and signatures to access a *relay port*:
 
@@ -179,4 +198,4 @@ The response is a json containing the resulting new pair and signature:
 
 ## License
 
-Grinbox is [MIT licensed](LICENSE).
+Grinbox is [licensed under GPL3.0](LICENSE).
