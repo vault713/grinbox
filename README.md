@@ -21,17 +21,17 @@
 
 Grinbox provides a simple way for two parties to exchange transaction slates as part of building a transaction interactively.
 
-In order to communicate over the relay, each party has to be able to get pending slates from the relay from a dedicated *relay port*, and to post new slates to the relay to the other party's dedicated *relay port*. **The relay port is identified by each party's public key.**
+In order to communicate over the relay, each party has to be able to get pending slates from the relay from a dedicated address, and to post new slates to the relay to the other party's dedicated address. **The address is identified by each party's public key.**
 
 ## Transaction flow overview
 Assuming Alice wants to send Bob 50 grins using the relay: 
-1. Alice creates a public/private key pair and an access signature to her dedicated *relay port*
-2. Bob creates a public/private key pair and an access signature to his dedicated *relay port*
+1. Alice creates a public/private key pair and an access signature to use as her dedicated address
+2. Bob creates a public/private key pair and an access signature to use as his dedicated address
 3. Bob sends Alice his public key
-4. Alice creates a slate for sending 50 grins to Bob and posts it to Bob's *relay port*, identified by the public key in the previous step
-5. Bob gets the slate from his *relay port* using his signature
-6. Bob processes the slate and posts the response into Alice's *relay port*
-7. Alice gets the slate from her *relay port* using her signature
+4. Alice creates a slate for sending 50 grins to Bob and posts it to Bob's address, identified by the public key in the previous step
+5. Bob gets the slate from his address using his signature
+6. Bob processes the slate and posts the response into Alice's address
+7. Alice gets the slate from her address using her signature
 8. Alice finalises the transaction and broadcasts it to the Grin blockchain
 
 ## Detailed usage information
@@ -53,14 +53,14 @@ Sample Private Key (hex)
 7d84f0c35abbdc64f5438ae3f0179e4768dd444505dcfcf0f3a8842b89beeef0
 ```
 
-Sample Public Key (hex), which doubles as the *relay port*
+Sample Public Key (hex), which doubles as the address
 ```
 046c3c115c3d1e61d3500e04c86059244b2fa80cd2111be72e225a7f21d8f65dca41429b5d0d37035081b98136bf3346560f48ba84bf26d5453660e2efc4fe0eb3
 ```
 
 ### Signing
 
-In order to get slates from the *relay port* for a given public key, a signature hash needs to be provided. The signature is a SECP256K1 ECDSA using the corresponding private key, where the message is a 32-byte hash value that can be obtained from the relay.
+In order to get slates from the address for a given public key, a signature hash needs to be provided. The signature is a SECP256K1 ECDSA using the corresponding private key, where the message is a 32-byte hash value that can be obtained from the relay.
 
 The hash value may rotate from time to time, forcing users to re-create a valid signature.
 
@@ -180,7 +180,7 @@ curl -i
 
 ### Helper REST API for key pair & signature generation
 
-The following helper REST API can be used to generate the necessary keys and signatures to access a *relay port*:
+The following helper REST API can be used to generate the necessary keys and signatures to access an address:
 
 ```
 curl http://grinbox.io:13420/port
