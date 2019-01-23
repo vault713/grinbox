@@ -4,14 +4,14 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=Edge">
     <title>
-        713.grinbox: Asynchronous transaction building for Grin
+        Grinbox: The easy way to send and receive in Grin
     </title>
     <meta name="author" content="vault713">
-    <meta name="description" content="Federated relay for asynchronous transaction building in Grin">
-    <meta property="og:title" content="713.grinbox">
-    <meta property="og:site_name" content="713.grinbox">
-    <meta name="og:description" content="Federated relay for asynchronous transaction building in Grin">
-    <meta name="keywords" content="grinbox, vault713, wallet713, wallet 713, vault 713, grin, grin news, grin box, grinswap, grin swap, mimblewimble, 713.grinbox, 713.grinswap, blockchain, cryptocurrency, crypto, rust, open source">
+    <meta name="description" content="Open source protocol for asynchronous transaction building in Grin">
+    <meta property="og:title" content="Grinbox">
+    <meta property="og:site_name" content="Grinbox">
+    <meta name="og:description" content="Open source protocol for asynchronous transaction building in Grin">
+    <meta name="keywords" content="grinbox, vault713, wallet713, wallet 713, vault 713, grin, grin news, grin box, grinswap, grin swap, mimblewimble, blockchain, cryptocurrency, crypto, rust, open source">
     <meta property="og:url" content="https://grinbox.io/">
     <meta property="og:image" content="">
     <meta name="revisit-after" content="7 days">
@@ -20,36 +20,65 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="css/tachyons.min.css">
   </head>
-  <body class="code bg-near-black light-green lh-copy">
-    <div class="pa2 pa4-l ma4-l ma2 w-60-l">
-        <p class="f1-ns f2 mb0">713.grinbox</p>
-        <p class="f4-ns f5 mt0">A transaction building service for Grin, currently under development on <a href="https://github.com/vault713/grinbox" class="link washed-green dim">Github</a>.</p>
-    
-        <p class="f4-ns f6"><a href="https://grin-tech.org" class="washed-green link dim">Grin</a> is a cryptocurrency with a focus on privacy and scalability. Transactions are interactive, requiring the Sender and Recipient to interact over a single round trip in order to build a valid transaction.
-  
-        <h2 class="f3-ns f4">What's 713.grinbox?</h2>
-        <p class="f4-ns f6">713.grinbox facilitates transaction building by acting as a relaying service that routes messages back and forth between senders and recipients.
+  <body class="sans-serif bg-near-white near-black lh-copy">
+    <div class="pa2 pa4-l ma0-l ma2 w-80-l bg-near-white">
+        <p class="ma3 ma4-ns f-subheadline-ns f-headline-l f1 lh-solid tracked-tight">grinbox://</p>
+        <p class="ma3 ma4-ns f3 lh-solid">The easy way to send and receive in Grin.</p>
 
-        <h2 class="f3-ns f4">Current status</h2>
-        <p class="f4-ns f6">Integrated and operational in <a href="https://github.com/vault713/wallet713" class="link orange b dim">wallet713</a> - a wallet that aims to make it easy to store, send, and swap Grin. Build the latest version and try it out.
+        <div class="mw9 center ph3-ns">
+            <div class="cf ph2-ns">
+                <div class="fl w-100 w-third-ns pa2">
+                    <a href="https://" class="link"><div class="bg-light-green near-black hover-dark-green pa2 pt5">
+                     <p class="v-btm"><span class="f2 b tracked-tight lh-solid">Developers</span></br>
+                     <span class="fw1 f5">Integrate grinbox</span></p>
+                    </div></a>
+                </div>
+                <div class="fl w-100 w-third-ns pa2">
+                     <a href="https://" class="link"><div class=" hover-dark-blue bg-light-blue near-black pa2 pt5">
+                     <p class="v-btm"><span class="f2 b tracked-tight lh-solid">Businesses</span></br>
+                     <span class="fw1 f5">Run your own grinbox relay</span></p>
+                    </div></a>
+                </div>
+                <div class="fl w-100 w-third-ns pa2">
+                     <a href="https://" class="link"><div class="bg-light-pink hover-dark-pink near-black pa2 pt5">
+                     <p class="v-btm"><span class="f2 b tracked-tight lh-solid">Users</span></br>
+                     <span class="fw1 f5">Try grinbox with wallet713</span></p>
+                    </div></a>
+                </div>
+            </div>
+        </div>
 
-<!-- Begin MailChimp Signup Form -->
-<div class="">
-<form action="https://grinbox.us18.list-manage.com/subscribe/post?u=62d8575ff2b9ce68dd7be57c3&amp;id=13b83bf62f" method="post" id="mc-embedded-subscribe-form" name="mc-embedded-subscribe-form" class="validate bg-light-green pa4-ns pa3 br2-ns ba b--black-10" target="_blank" novalidate>
-  <fieldset class="cf bn ma0 pa0">
-    <legend class="pa0 f5 f4-ns mb3 near-black">Stay updated</legend>
-    <div id="mc_embed_signup_scroll" class="cf">
-    <input type="email" value="" name="EMAIL" class="email f6 f5-l input-reset bn fl black-80 bg-white pa3 lh-solid w-100 w-75-m w-80-l br2-ns br--left-ns" id="mce-EMAIL" placeholder="email address" required>
-    <!-- real people should not fill this in and expect good things - do not remove this or risk form bot signups-->
-    <div style="position: absolute; left: -5000px;" aria-hidden="true"><input type="text" name="b_62d8575ff2b9ce68dd7be57c3_13b83bf62f" tabindex="-1" value=""></div>
-    <input type="submit" value="Subscribe" name="subscribe" id="mc-embedded-subscribe" class="6 f5-l button-reset fl pv3 tc bn bg-animate bg-black-70 hover-bg-black white pointer w-100 w-25-m w-20-l br2-ns br--right-ns">
+        <h2 class="mt4 ml3 ml4-ns f3-ns lh-solid f4">We love Grin, but transacting ain't easy</h2>
+        <p class="ml3 ml4-ns measure f4 mt0"><a href="https://grin-tech.org" class="link near-black dim bb bw1">Grin<sup>↗</sup></a> is a cryptocurrency that aims to be privacy-preserving, scalable, and minimal in its design. Transactions are interactive, requiring senders and recipients to interact over a single round trip in order to build a valid transaction. Making this work in practice often ends up being a trade-off between privacy, performance, and ease of use for businesses, wallet developers, and users alike.  
+
+        <h2 class="mt4 ml3 ml4-ns f3-ns lh-solid f4">What's grinbox?</h2>
+        <div class="lh-copy ml3 ml4-ns measure f4 mt0"><p>Grinbox is a transaction protocol that utilises relay servers to build and broadcast valid Grin transactions in a secure and scaleable way without compromising on privacy:</p>
+        <p><ul>
+            <li><span class="fw6">100% free and open source.</span> Grinbox is free to use and open for anyone to integrate into their products and services.</li>
+            <li><span class="fw6">End to end encryption.</span> Relays cannot read the transaction data, only the  parties involved in a transaction can.</li>
+            <li><span class="fw6">Asynchronous messaging.</span> Senders and recipients do not need to be online at the same time to transact.</li>
+            <li><span class="fw6">Easy user experience.</span> Users are ready to send and receive to unique addresses immediately.</li>
+            <li><span class="fw6">Transaction proofs.</span> With grinbox, it becomes easy to prove that a Grin transaction was sent to a recipient.</li>
+            <li><span class="fw6">Federation supported.</span> Anyone can run their own transaction relay or use the server they prefer.</li>
+        </ul></p>
+        </div>
+
+        <h2 class="mt4 ml3 ml4-ns f3-ns lh-solid f4">How to get started</h2>
+        <div class="lh-copy measure ml3 ml4-ns f4 mt0">
+            <p>If you're a <span class="fw6 bg-light-green">developer</span>, looking to add grinbox support into your product or service, take a look at the <a href="http://" class="link near-black dim bb bw1">integration documentation<sup>↗</sup></a>.</p>
+            <p>If you're a <span class="fw6 bg-light-blue">business</span> or just want to run your own grinbox relay, get the latest version of grinbox server from the <a href="http://" class="link near-black dim bb bw1">GitHub repo<sup>↗</sup></a>.</p>
+            <p>If you're a <span class="fw6 bg-light-pink">user</span> and want to try out grinbox, it's integrated and ready for use in <a href="http://" class="link near-black dim bb bw1">wallet713<sup>↗</sup></a>.</p>
+        </div>
     </div>
-  </fieldset>
-</form>
-</div>
-<!--End mc_embed_signup-->
-
-<div class="pt3 white-30">Made by <a href="https://713.mw" class="link f6 white-40 dim bb bw1">vault713</a>.</div>
-</div>
+ <div class="bg-black-90 w-100 cf">
+    <div class="fl pa2 pa4-l ma0-l ma2 w-50-l fw3 pr3 cf-4th measure">
+    <div class="ma3 ma4-ns white">Made with ♥︎ by <a href="https://713.mw" class="link white dim bb bw1">vault713</a>.
+    <p class="lh-copy f6 white">mail: <a class="white dim link" href="mailto:hello@713.mw">hello@713.mw</a><br>
+    twitter: <a class="white dim link" href="https://twitter.com/vault713co">@vault713co</a><br>
+    gitter: <a class="white dim link" href="https://gitter.im/vault713/grinbox">https://gitter.im/vault713/grinbox</a></p>
+    <p><a href="https://grin-tech.org" class="link dim"><img src="img/grin.svg" class="h2"></a></p>
+    </div>
+    </div>
+  </div>
 </body>
 </html>
