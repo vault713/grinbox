@@ -187,7 +187,7 @@ impl Drop for Consumer {
 }
 
 pub fn handle_post_message<T: AsyncRead + AsyncWrite + Sync + Send + 'static>(client: &lapin_futures::client::Client<T>, subject: String, payload: String, reply_to: String) -> impl Future<Item = (), Error = Error> {
-    client.create_confirm_channel(ConfirmSelectOptions::default()).and_then(move |channel| {
+    client.create_channel().and_then(move |channel| {
         let mut arguments = FieldTable::new();
         arguments.insert("x-expires".to_string(), lapin_futures::types::AMQPValue::LongUInt(DEFAULT_QUEUE_EXPIRATION));
         let mut queue_declare_options = QueueDeclareOptions::default();
@@ -196,8 +196,8 @@ pub fn handle_post_message<T: AsyncRead + AsyncWrite + Sync + Send + 'static>(cl
             .and_then(move |_| {
                 channel.basic_publish("", &subject[..], payload.into_bytes(),
                     BasicPublishOptions::default(),
-                    BasicProperties::default().with_reply_to(reply_to).with_expiration(DEFAULT_MESSAGE_EXPIRATION.to_string()))
-                .and_then(move |_| {
+                    BasicProperties::default().with_reply_to(reply_to).with_expiration(DEFAULT_MESSAGE_EXPIRATION.to_string())
+                ).and_then(move |_| {
                     channel.close(0, "")
                 })
             })

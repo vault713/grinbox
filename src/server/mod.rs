@@ -127,7 +127,7 @@ impl AsyncServer {
                                     };
                                     let guard = clone.lock().unwrap();
                                     let ref server = *guard;
-                                    debug!("[{}] <- {}", server.id.bright_green(), response);
+                                    info!("[{}] <- {}", server.id.bright_green(), response);
                                     if server.out.send(serde_json::to_string(&response).unwrap()).is_err() {
                                         error!("failed sending slate to client!");
                                     };
@@ -258,11 +258,18 @@ impl AsyncServer {
         } else {
             let mut challenge = String::new();
             challenge.push_str(&str);
-            challenge.push_str(self.get_challenge_raw());
-            let result = self.verify_signature(&from_address.public_key, &challenge, &signature);
+
+            let mut result = self.verify_signature(&from_address.public_key, &challenge, &signature);
+            let mut challenge_raw = "";
+            if result.is_err() {
+                challenge.push_str(self.get_challenge_raw());
+                challenge_raw = self.get_challenge_raw();
+                result = self.verify_signature(&from_address.public_key, &challenge, &signature);
+            }
+
             match result {
                 Ok(()) => {
-                    let signed_payload = SignedPayload { str, challenge: self.get_challenge_raw().to_string(), signature };
+                    let signed_payload = SignedPayload { str, challenge: challenge_raw.to_string(), signature };
                     let signed_payload = serde_json::to_string(&signed_payload).unwrap();
                     if self.nats_sender.unbounded_send(BrokerRequest::PostMessage {
                         subject: to_address.public_key,
@@ -297,7 +304,7 @@ impl Handler for AsyncServer {
     }
 
     fn on_open(&mut self, _: Handshake) -> Result<(), ws::Error> {
-        debug!("[{}] {}", self.id.bright_green(), "connection established".bright_purple());
+        info!("[{}] {}", self.id.bright_green(), "connection established".bright_purple());
 
         let response = self.get_challenge();
         debug!("[{}] <- {}", self.id.bright_green(), response);
@@ -314,7 +321,7 @@ impl Handler for AsyncServer {
         let response =
             if request.is_ok() {
                 let request = request.unwrap();
-                debug!("[{}] -> {}", self.id.bright_green(), request);
+                info!("[{}] -> {}", self.id.bright_green(), request);
                 match request {
                     ProtocolRequest::Challenge => self.get_challenge(),
                     ProtocolRequest::Subscribe { address, signature } => self.subscribe(address, signature),
@@ -326,14 +333,14 @@ impl Handler for AsyncServer {
                 AsyncServer::error(ProtocolError::InvalidRequest)
             };
 
-        debug!("[{}] <- {}", self.id.bright_green(), response);
+        info!("[{}] <- {}", self.id.bright_green(), response);
         let server = self.inner.lock().unwrap();
         server.out.send(serde_json::to_string(&response).unwrap())
     }
 
     fn on_close(&mut self, code: CloseCode, _reason: &str) {
         let code = format!("{:?}", code);
-        debug!("[{}] {} [{}]", self.id.bright_green(), "connection dropped".bright_purple(), code.bright_green());
+        info!("[{}] {} [{}]", self.id.bright_green(), "connection dropped".bright_purple(), code.bright_green());
     }
 
     fn on_error(&mut self, err: ws::Error) {
