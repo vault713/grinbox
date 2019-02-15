@@ -1,49 +1,22 @@
-pub mod types;
-
-use std::collections::HashMap;
-use std::str::FromStr;
-
 use colored::*;
-use uuid::Uuid;
 use futures::{
-    sync::mpsc::{
-        UnboundedReceiver,
-        UnboundedSender,
-        unbounded
-    },
     future::lazy,
-    Future,
-    Stream,
+    sync::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
+    Future, Stream,
 };
+use std::collections::HashMap;
+use uuid::Uuid;
 
-use ws::{
-    Handler,
-    Sender,
-    Message,
-    Handshake,
-    CloseCode,
-    Request,
-    Response,
-};
+use ws::{CloseCode, Handler, Handshake, Message, Request, Response, Result as WsResult, Sender, connect};
 
-use super::broker::protocol::{
-    BrokerRequest,
-    BrokerResponse,
-};
+use grinboxlib::error::{ErrorKind, Result};
+use grinboxlib::types::{GrinboxAddress, GrinboxError, GrinboxRequest, GrinboxResponse};
+use grinboxlib::utils::crypto::{verify_signature, Base58, Hex};
+use grinboxlib::utils::secp::{PublicKey, Signature};
 
-use common::crypto::{Signature, PublicKey, Base58, Hex, verify_signature};
-
-use common::protocol::{
-    ProtocolRequest,
-    ProtocolResponse,
-    ProtocolError
-};
-
-use common::Error;
-use self::types::GrinboxAddress;
+use crate::broker::{BrokerRequest, BrokerResponse};
 
 static MAX_SUBSCRIPTIONS: usize = 1;
-
 
 pub struct BrokerResponseHandler {
     inner: std::sync::Arc<std::sync::Mutex<Server>>,
@@ -56,6 +29,9 @@ pub struct AsyncServer {
     nats_sender: UnboundedSender<BrokerRequest>,
     response_handlers_sender: UnboundedSender<BrokerResponseHandler>,
     subscriptions: HashMap<String, Subscription>,
+    grinbox_domain: String,
+    grinbox_port: u16,
+    grinbox_protocol_unsecure: bool,
 }
 
 pub struct Server {
@@ -63,9 +39,7 @@ pub struct Server {
     out: Sender,
 }
 
-struct Subscription {
-
-}
+struct Subscription {}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct SignedPayload {
@@ -77,9 +51,13 @@ struct SignedPayload {
 impl Drop for AsyncServer {
     fn drop(&mut self) {
         for (subject, _subscription) in &self.subscriptions {
-            if self.nats_sender.unbounded_send(BrokerRequest::Unsubscribe {
-                subject: subject.clone(),
-            }).is_err() {
+            if self
+                .nats_sender
+                .unbounded_send(BrokerRequest::Unsubscribe {
+                    subject: subject.clone(),
+                })
+                .is_err()
+            {
                 error!("failed to unsubscribe while dropping server!");
             };
         }
@@ -87,8 +65,14 @@ impl Drop for AsyncServer {
 }
 
 impl AsyncServer {
-    pub fn new(out: Sender, nats_sender: UnboundedSender<BrokerRequest>, response_handlers_sender: UnboundedSender<BrokerResponseHandler>) -> AsyncServer
-    {
+    pub fn new(
+        out: Sender,
+        nats_sender: UnboundedSender<BrokerRequest>,
+        response_handlers_sender: UnboundedSender<BrokerResponseHandler>,
+        grinbox_domain: &str,
+        grinbox_port: u16,
+        grinbox_protocol_unsecure: bool,
+    ) -> AsyncServer {
         let id = Uuid::new_v4().to_string();
 
         let server = Server {
@@ -102,6 +86,9 @@ impl AsyncServer {
             nats_sender,
             response_handlers_sender,
             subscriptions: HashMap::new(),
+            grinbox_domain: grinbox_domain.to_string(),
+            grinbox_port,
+            grinbox_protocol_unsecure,
         }
     }
 
@@ -110,16 +97,21 @@ impl AsyncServer {
 
         std::thread::spawn(move || {
             info!("broker handler started");
-            let fut_loop = fut_rx.for_each(move |handler| {
-                let clone = handler.inner.clone();
-                let response_loop = handler.response_receiver
-                    .for_each(move |m| {
+            let fut_loop = fut_rx
+                .for_each(move |handler| {
+                    let clone = handler.inner.clone();
+                    let response_loop = handler.response_receiver.for_each(move |m| {
                         match m {
-                            BrokerResponse::Message { subject: _, payload, reply_to } => {
-                                let signed_payload = serde_json::from_str::<SignedPayload>(&payload);
+                            BrokerResponse::Message {
+                                subject: _,
+                                payload,
+                                reply_to,
+                            } => {
+                                let signed_payload =
+                                    serde_json::from_str::<SignedPayload>(&payload);
                                 if signed_payload.is_ok() {
                                     let signed_payload = signed_payload.unwrap();
-                                    let response = ProtocolResponse::Slate {
+                                    let response = GrinboxResponse::Slate {
                                         from: reply_to,
                                         str: signed_payload.str,
                                         challenge: signed_payload.challenge,
@@ -128,7 +120,11 @@ impl AsyncServer {
                                     let guard = clone.lock().unwrap();
                                     let ref server = *guard;
                                     info!("[{}] <- {}", server.id.bright_green(), response);
-                                    if server.out.send(serde_json::to_string(&response).unwrap()).is_err() {
+                                    if server
+                                        .out
+                                        .send(serde_json::to_string(&response).unwrap())
+                                        .is_err()
+                                    {
                                         error!("failed sending slate to client!");
                                     };
                                 } else {
@@ -139,161 +135,235 @@ impl AsyncServer {
                         Ok(())
                     });
 
-                std::thread::spawn(move || {
-                    tokio::run(lazy(|| {
-                        tokio::spawn(response_loop);
-                        Ok(())
-                    }));
-                });
-                Ok(())
-            }).map_err(|_| {});
+                    std::thread::spawn(move || {
+                        tokio::run(lazy(|| {
+                            tokio::spawn(response_loop);
+                            Ok(())
+                        }));
+                    });
+                    Ok(())
+                })
+                .map_err(|_| {});
 
-            tokio::run(lazy(move || {
-                tokio::spawn(fut_loop)
-            }));
+            tokio::run(lazy(move || tokio::spawn(fut_loop)));
             debug!("future thread ended...");
         });
         fut_tx
     }
 
-    fn error(kind: ProtocolError) -> ProtocolResponse {
+    fn error(kind: GrinboxError) -> GrinboxResponse {
         let description = format!("{}", kind);
-        ProtocolResponse::Error { kind, description }
+        GrinboxResponse::Error { kind, description }
     }
 
-    fn ok() -> ProtocolResponse {
-        ProtocolResponse::Ok
+    fn ok() -> GrinboxResponse {
+        GrinboxResponse::Ok
     }
 
     fn get_challenge_raw(&self) -> &str {
         "7WUDtkSaKyGRUnQ22rE3QUXChV8DmA6NnunDYP4vheTpc"
     }
 
-    fn get_challenge(&self) -> ProtocolResponse {
-        ProtocolResponse::Challenge { str: String::from(self.get_challenge_raw()) }
+    fn get_challenge(&self) -> GrinboxResponse {
+        GrinboxResponse::Challenge {
+            str: String::from(self.get_challenge_raw()),
+        }
     }
 
-    fn verify_signature(&self, public_key: &str, challenge: &str, signature: &str) -> Result<(), Error> {
-        let public_key = PublicKey::from_base58_check(public_key, 2)?;
+    fn verify_signature(&self, public_key: &str, challenge: &str, signature: &str) -> Result<()> {
+        let (public_key, _) = PublicKey::from_base58_check_raw(public_key, 2)?;
         let signature = Signature::from_hex(signature)?;
-        verify_signature(challenge, &signature, &public_key).map_err(|_| {
-            Error::ProtocolError { kind: ProtocolError::InvalidSignature }
-        })?;
+        verify_signature(challenge, &signature, &public_key)
+            .map_err(|_| ErrorKind::GrinboxProtocolError(GrinboxError::InvalidSignature))?;
         Ok(())
     }
 
-    fn subscribe(&mut self, address: String, signature: String) -> ProtocolResponse {
+    fn subscribe(&mut self, address: String, signature: String) -> GrinboxResponse {
         let result = self.verify_signature(&address, self.get_challenge_raw(), &signature);
         match result {
             Ok(()) => {
                 if self.subscriptions.len() == MAX_SUBSCRIPTIONS {
-                    AsyncServer::error(ProtocolError::TooManySubscriptions)
+                    AsyncServer::error(GrinboxError::TooManySubscriptions)
                 } else {
                     let (res_tx, res_rx) = unbounded::<BrokerResponse>();
-                    if self.nats_sender.unbounded_send(BrokerRequest::Subscribe {
-                        subject: address.clone(),
-                        response_sender: res_tx,
-                    }).is_err() {
+                    if self
+                        .nats_sender
+                        .unbounded_send(BrokerRequest::Subscribe {
+                            subject: address.clone(),
+                            response_sender: res_tx,
+                        })
+                        .is_err()
+                    {
                         error!("could not issue subscribe request!");
-                        return AsyncServer::error(ProtocolError::UnknownError)
+                        return AsyncServer::error(GrinboxError::UnknownError);
                     };
 
-                    if self.response_handlers_sender.unbounded_send(BrokerResponseHandler {
-                        inner: self.inner.clone(),
-                        response_receiver: res_rx,
-                    }).is_err() {
+                    if self
+                        .response_handlers_sender
+                        .unbounded_send(BrokerResponseHandler {
+                            inner: self.inner.clone(),
+                            response_receiver: res_rx,
+                        })
+                        .is_err()
+                    {
                         error!("could not register subscription handler!");
-                        return AsyncServer::error(ProtocolError::UnknownError)
+                        return AsyncServer::error(GrinboxError::UnknownError);
                     };
 
-                    self.subscriptions.insert(
-                        address.clone(),
-                        Subscription {}
-                    );
+                    self.subscriptions.insert(address.clone(), Subscription {});
 
                     AsyncServer::ok()
                 }
-            },
-            Err(e) => {
-                match e {
-                    Error::ProtocolError { kind } => AsyncServer::error(kind),
-                    _ => AsyncServer::error(ProtocolError::UnknownError),
-                }
             }
+            Err(_) => AsyncServer::error(GrinboxError::UnknownError),
         }
     }
 
-    fn unsubscribe(&mut self, address: String) -> ProtocolResponse {
+    fn unsubscribe(&mut self, address: String) -> GrinboxResponse {
         let result = self.subscriptions.remove(&address);
         match result {
             Some(_subscription) => {
-                if self.nats_sender.unbounded_send(BrokerRequest::Unsubscribe {
-                    subject: address.clone(),
-                }).is_err() {
+                if self
+                    .nats_sender
+                    .unbounded_send(BrokerRequest::Unsubscribe {
+                        subject: address.clone(),
+                    })
+                    .is_err()
+                {
                     error!("could not unsubscribe!");
-                    return AsyncServer::error(ProtocolError::UnknownError)
+                    return AsyncServer::error(GrinboxError::UnknownError);
                 };
 
                 AsyncServer::ok()
-            },
-            None => AsyncServer::error(ProtocolError::InvalidRequest)
+            }
+            None => AsyncServer::error(GrinboxError::InvalidRequest),
         }
     }
 
-    fn post_slate(&self, from: String, to: String, str: String, signature: String) -> ProtocolResponse {
-        let from_address = GrinboxAddress::from_str(&from);
+    fn post_slate(
+        &self,
+        from: String,
+        to: String,
+        str: String,
+        signature: String,
+    ) -> GrinboxResponse {
+        let from_address = GrinboxAddress::from_str_raw(&from);
         if from_address.is_err() {
-            return AsyncServer::error(ProtocolError::InvalidRequest);
+            return AsyncServer::error(GrinboxError::InvalidRequest);
         }
         let from_address = from_address.unwrap();
 
-        let to_address = GrinboxAddress::from_str(&to);
+        let to_address = GrinboxAddress::from_str_raw(&to);
         if to_address.is_err() {
-            return AsyncServer::error(ProtocolError::InvalidRequest);
+            return AsyncServer::error(GrinboxError::InvalidRequest);
         }
         let to_address = to_address.unwrap();
 
-        if let Err(_) = PublicKey::from_base58_check(&to_address.public_key, 2) {
-            AsyncServer::error(ProtocolError::InvalidRequest)
+        let mut challenge = String::new();
+        challenge.push_str(&str);
+
+        let mut result =
+            self.verify_signature(&from_address.public_key, &challenge, &signature);
+
+        let mut challenge_raw = "";
+        if result.is_err() {
+            challenge.push_str(self.get_challenge_raw());
+            challenge_raw = self.get_challenge_raw();
+            result = self.verify_signature(&from_address.public_key, &challenge, &signature);
+        }
+
+        if result.is_err() {
+            return AsyncServer::error(GrinboxError::InvalidSignature);
+        }
+
+        if to_address.port == self.grinbox_port && to_address.domain == self.grinbox_domain {
+            let signed_payload = SignedPayload {
+                str,
+                challenge: challenge_raw.to_string(),
+                signature,
+            };
+
+            let signed_payload = serde_json::to_string(&signed_payload).unwrap();
+
+            if self
+                .nats_sender
+                .unbounded_send(BrokerRequest::PostMessage {
+                    subject: to_address.public_key,
+                    payload: signed_payload,
+                    reply_to: from_address.stripped(),
+                })
+                .is_err()
+                {
+                    error!("could not post message to broker!");
+                    return AsyncServer::error(GrinboxError::UnknownError);
+                };
+
+            AsyncServer::ok()
         } else {
-            let mut challenge = String::new();
-            challenge.push_str(&str);
+            self.post_slate_federated(&from_address, &to_address, str, signature)
+        }
+    }
 
-            let mut result = self.verify_signature(&from_address.public_key, &challenge, &signature);
-            let mut challenge_raw = "";
-            if result.is_err() {
-                challenge.push_str(self.get_challenge_raw());
-                challenge_raw = self.get_challenge_raw();
-                result = self.verify_signature(&from_address.public_key, &challenge, &signature);
-            }
+    fn post_slate_federated(&self, from_address: &GrinboxAddress, to_address: &GrinboxAddress, str: String, signature: String) -> GrinboxResponse {
+        let url = match self.grinbox_protocol_unsecure {
+            false => format!(
+                "wss://{}:{}",
+                to_address.domain,
+                to_address.port
+            ),
+            true => format!(
+                "ws://{}:{}",
+                to_address.domain,
+                to_address.port
+            )
+        };
 
-            match result {
-                Ok(()) => {
-                    let signed_payload = SignedPayload { str, challenge: challenge_raw.to_string(), signature };
-                    let signed_payload = serde_json::to_string(&signed_payload).unwrap();
-                    if self.nats_sender.unbounded_send(BrokerRequest::PostMessage {
-                        subject: to_address.public_key,
-                        payload: signed_payload,
-                        reply_to: from_address.to_string(),
-                    }).is_err() {
-                        error!("could not post message to broker!");
-                        return AsyncServer::error(ProtocolError::UnknownError)
-                    };
-                    AsyncServer::ok()
-                },
-                Err(e) => {
-                    match e {
-                        Error::ProtocolError { kind } => AsyncServer::error(kind),
-                        _ => AsyncServer::error(ProtocolError::UnknownError),
+        let str = str.clone();
+        let signature = signature.clone();
+        let result = connect(url, move |sender| {
+            let str = str.clone();
+            let signature = signature.clone();
+            move |msg: Message| {
+                let response = serde_json::from_str::<GrinboxResponse>(&msg.to_string())
+                    .expect("could not parse response!");
+
+                match response {
+                    GrinboxResponse::Challenge { str: _ } => {
+                        let request = GrinboxRequest::PostSlate {
+                            from: from_address.stripped(),
+                            to: to_address.stripped(),
+                            str: str.clone(),
+                            signature: signature.clone(),
+                        };
+
+                        sender
+                            .send(serde_json::to_string(&request).unwrap())
+                            .unwrap();
                     }
+                    GrinboxResponse::Error {
+                        kind: _,
+                        description: _,
+                    } => {
+                        sender.close(CloseCode::Abnormal).is_ok();
+                    }
+                    GrinboxResponse::Ok => {
+                        sender.close(CloseCode::Normal).is_ok();
+                    }
+                    _ => {}
                 }
+                Ok(())
             }
+        });
+
+        match result {
+            Ok(()) => AsyncServer::ok(),
+            Err(_) => AsyncServer::error(GrinboxError::UnknownError),
         }
     }
 }
 
 impl Handler for AsyncServer {
-    fn on_request(&mut self, req: &Request) -> Result<Response, ws::Error> {
+    fn on_request(&mut self, req: &Request) -> WsResult<Response> {
         let res = Response::from_request(req);
         if let Err(_) = res {
             let response = Response::new(200, "", vec![]);
@@ -303,35 +373,53 @@ impl Handler for AsyncServer {
         }
     }
 
-    fn on_open(&mut self, _: Handshake) -> Result<(), ws::Error> {
-        info!("[{}] {}", self.id.bright_green(), "connection established".bright_purple());
+    fn on_open(&mut self, _: Handshake) -> WsResult<()> {
+        info!(
+            "[{}] {}",
+            self.id.bright_green(),
+            "connection established".bright_purple()
+        );
 
         let response = self.get_challenge();
         debug!("[{}] <- {}", self.id.bright_green(), response);
         let server = self.inner.lock().unwrap();
-        if server.out.send(serde_json::to_string(&response).unwrap()).is_err() {
+        if server
+            .out
+            .send(serde_json::to_string(&response).unwrap())
+            .is_err()
+        {
             error!("could not send challenge to client!");
         };
         Ok(())
     }
 
-    fn on_message(&mut self, msg: Message) -> Result<(), ws::Error> {
+    fn on_message(&mut self, msg: Message) -> WsResult<()> {
         let request = serde_json::from_str(&msg.to_string());
 
-        let response =
-            if request.is_ok() {
-                let request = request.unwrap();
-                info!("[{}] -> {}", self.id.bright_green(), request);
-                match request {
-                    ProtocolRequest::Challenge => self.get_challenge(),
-                    ProtocolRequest::Subscribe { address, signature } => self.subscribe(address, signature),
-                    ProtocolRequest::PostSlate { from, to, str, signature } => self.post_slate(from, to, str, signature),
-                    ProtocolRequest::Unsubscribe { address } => self.unsubscribe(address),
+        let response = if request.is_ok() {
+            let request = request.unwrap();
+            info!("[{}] -> {}", self.id.bright_green(), request);
+            match request {
+                GrinboxRequest::Challenge => self.get_challenge(),
+                GrinboxRequest::Subscribe { address, signature } => {
+                    self.subscribe(address, signature)
                 }
-            } else {
-                debug!("[{}] -> {}", self.id.bright_green(), "invalid request!".bright_red());
-                AsyncServer::error(ProtocolError::InvalidRequest)
-            };
+                GrinboxRequest::PostSlate {
+                    from,
+                    to,
+                    str,
+                    signature,
+                } => self.post_slate(from, to, str, signature),
+                GrinboxRequest::Unsubscribe { address } => self.unsubscribe(address),
+            }
+        } else {
+            debug!(
+                "[{}] -> {}",
+                self.id.bright_green(),
+                "invalid request!".bright_red()
+            );
+            AsyncServer::error(GrinboxError::InvalidRequest)
+        };
 
         info!("[{}] <- {}", self.id.bright_green(), response);
         let server = self.inner.lock().unwrap();
@@ -340,7 +428,12 @@ impl Handler for AsyncServer {
 
     fn on_close(&mut self, code: CloseCode, _reason: &str) {
         let code = format!("{:?}", code);
-        info!("[{}] {} [{}]", self.id.bright_green(), "connection dropped".bright_purple(), code.bright_green());
+        info!(
+            "[{}] {} [{}]",
+            self.id.bright_green(),
+            "connection dropped".bright_purple(),
+            code.bright_green()
+        );
     }
 
     fn on_error(&mut self, err: ws::Error) {

@@ -1,42 +1,33 @@
-use std::net::SocketAddr;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use futures::{
-    sync::mpsc::{
-        UnboundedSender,
-        unbounded
-    },
-    Async,
-    Poll,
-    IntoFuture,
-    future,
-    Future,
-    Stream,
-};
-
-use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
-use lapin_futures::client::ConnectionOptions;
-use lapin_futures::channel::{ConfirmSelectOptions, BasicPublishOptions, BasicConsumeOptions, BasicProperties,QueueDeclareOptions};
-use lapin_futures::types::FieldTable;
+use tokio::prelude::*;
 
-use super::protocol::{
-    BrokerRequest,
-    BrokerResponse,
+use futures::{
+    Stream,
+    sync::mpsc::{unbounded, UnboundedSender},
+    Future
 };
 
-use colored::*;
-use common::Error;
+use grinboxlib::error::Result;
 
-type Client = lapin_futures::client::Client<TcpStream>;
-type Channel = lapin_futures::channel::Channel<TcpStream>;
+use crate::broker::{BrokerRequest, BrokerResponse};
+use crate::broker::stomp::session::SessionEvent;
+use crate::broker::stomp::session_builder::SessionBuilder;
+use crate::broker::stomp::connection::{HeartBeat, Credentials};
+use crate::broker::stomp::header::{Header, HeaderName, SUBSCRIPTION};
+use crate::broker::stomp::subscription::AckMode;
+use crate::broker::stomp::frame::Frame;
 
-const DEFAULT_QUEUE_EXPIRATION: u32 = 86400000;
+type Session = crate::broker::stomp::session::Session<TcpStream>;
+
+const DEFAULT_QUEUE_EXPIRATION: &str = "86400000";
 const DEFAULT_MESSAGE_EXPIRATION: &str = "86400000";
+const REPLY_TO_HEADER_NAME: &str = "grinbox-reply-to";
 
 pub struct Broker {
     address: SocketAddr,
-    consumers: Arc<Mutex<HashMap<String, Consumer>>>,
     username: String,
     password: String,
 }
@@ -45,237 +36,223 @@ impl Broker {
     pub fn new(address: SocketAddr, username: String, password: String) -> Broker {
         Broker {
             address,
-            consumers: Arc::new(Mutex::new(HashMap::new())),
             username,
             password,
         }
     }
 
-    pub fn start(&self) -> UnboundedSender<BrokerRequest> {
+    pub fn start(&mut self) -> Result<UnboundedSender<BrokerRequest>> {
         let (tx, rx) = unbounded();
         let address = self.address.clone();
         let username = self.username.clone();
         let password = self.password.clone();
-        let consumers = self.consumers.clone();
-        std::thread::spawn(move|| {
-            let program = Broker::connect(address, username, password)
-                .and_then(move |client| {
-                    info!("connected to rabbitmq broker");
-                    let request_loop = rx
-                        .for_each(move |request| {
-                            match request {
-                                BrokerRequest::Subscribe { subject, response_sender } => {
-                                    let mut consumer = Consumer::new(subject.clone(), response_sender.clone());
-                                    tokio::spawn(consumer.start(&client).map_err(|_|{}));
-                                    consumers.lock().unwrap().insert(subject.clone(), consumer);
-                                },
-                                BrokerRequest::Unsubscribe { subject } => {
-                                    let _consumer = consumers.lock().unwrap().remove(&subject);
-                                },
-                                BrokerRequest::PostMessage { subject, payload, reply_to } => {
-                                    let future = handle_post_message(&client, subject, payload, reply_to);
-                                    tokio::spawn(future.map_err(|_|{}));
-                                },
-                            }
-                            Ok(())
-                        })
-                        .map_err(|e| error!("error = {:?}", e));
+        std::thread::spawn(move || {
+            let tcp_stream = Box::new(TcpStream::connect(&address));
 
-                    tokio::spawn(request_loop);
+            let session = SessionBuilder::new()
+                .with(Credentials(&username, &password))
+                .with(HeartBeat(10000, 10000))
+                .build(tcp_stream);
+
+            let session = BrokerSession {
+                session: Arc::new(Mutex::new(session)),
+                session_number: 0,
+                consumers: Arc::new(Mutex::new(HashMap::new())),
+                subject_to_subscription_id_lookup: Arc::new(Mutex::new(HashMap::new())),
+            };
+
+            let mut session_clone = session.clone();
+
+            let request_loop = rx
+                .for_each(move |request| {
+                    match request {
+                        BrokerRequest::Subscribe { subject, response_sender } => {
+                            session_clone.subscribe(subject.clone(), response_sender.clone());
+                        },
+                        BrokerRequest::Unsubscribe { subject } => {
+                            session_clone.unsubscribe(&subject);
+                        },
+                        BrokerRequest::PostMessage { subject, payload, reply_to } => {
+                            session_clone.publish(&subject, &payload, &reply_to);
+                        },
+                    }
                     Ok(())
-                }).map_err(|e| {
-                error!("{}", e);
-            }
-            );
-
-            tokio::run(program);
-        });
-        tx
-    }
-
-    pub fn connect(address: SocketAddr, username: String, password: String) -> impl Future<Item = Client, Error = Error> {
-        TcpStream::connect(&address)
-            .and_then(move|stream| {
-                Client::connect(stream, ConnectionOptions {
-                    frame_max: 65535,
-                    username,
-                    password,
-                    ..Default::default()
                 })
-            })
-            .map_err(|_| Error::generic("failed connecting!"))
-            .and_then(|(client, heartbeat)| {
-                tokio::spawn(heartbeat.map_err(|e| error!("heartbeat error: {:?}", e)))
-                    .into_future().map(|_| client)
-                    .map_err(|_| Error::generic("failed connecting!"))
-            })
+                .map_err(|()| std::io::Error::new(std::io::ErrorKind::Other, ""));
+
+            let f = session.select(request_loop).map_err(|_| {}).map(|_| {});
+
+            tokio::run(f);
+
+            error!("broker thread ending!");
+
+            // TODO: attempt reconnection and re-establishment of subscriptions?
+            std::process::exit(1);
+        });
+
+        Ok(tx)
     }
 }
 
 struct Consumer {
     subject: String,
+    subscription_id: String,
     sender: UnboundedSender<BrokerResponse>,
-    completer: UnboundedSender<()>,
-    channel: Arc<Mutex<Option<Channel>>>,
 }
 
 impl Consumer {
-    pub fn new(subject: String, sender: UnboundedSender<BrokerResponse>) -> Consumer {
-        let (completer, _) = unbounded::<()>();
+    pub fn new(subject: String, subscription_id: String, sender: UnboundedSender<BrokerResponse>) -> Consumer {
         Consumer {
             subject,
+            subscription_id,
             sender,
-            completer,
-            channel: Arc::new(Mutex::new(None)),
         }
-    }
-
-    pub fn start(&mut self, client: &Client) -> impl Future<Item = (), Error = Error> {
-        let subject = self.subject.clone();
-        let sender = self.sender.clone();
-        let (completer, sink) = unbounded::<()>();
-        self.completer = completer.clone();
-        let self_channel = self.channel.clone();
-        client.create_confirm_channel(ConfirmSelectOptions::default()).and_then(move |channel| {
-            let mut arguments = FieldTable::new();
-            arguments.insert("x-expires".to_string(), lapin_futures::types::AMQPValue::LongUInt(DEFAULT_QUEUE_EXPIRATION));
-            let mut queue_declare_options = QueueDeclareOptions::default();
-            queue_declare_options.durable = true;
-            channel.queue_declare(&subject[..], queue_declare_options, arguments).map(move |queue| (channel, queue))
-                .and_then(move |(channel, queue)| {
-                    let mut basic_consumer_options = BasicConsumeOptions::default();
-                    basic_consumer_options.no_ack = true;
-                    channel.basic_consume(&queue, "", basic_consumer_options, FieldTable::new()).map(move |stream| (channel, stream))
-                }).and_then(move |(channel, stream)| {
-                    let mut guard = self_channel.lock().unwrap();
-                    *guard = Some(channel);
-                    let completion_pact = CompletionPact::new(stream, sink);
-                    completion_pact.for_each(move |message| {
-                        let payload = std::str::from_utf8(&message.data);
-                        if payload.is_ok() {
-                            let payload = payload.unwrap().to_string();
-                            let response = BrokerResponse::Message {
-                                subject: subject.clone(),
-                                payload,
-                                reply_to: message.properties.reply_to().clone().unwrap_or("".to_string()),
-                            };
-                            if sender.unbounded_send(response).is_err() {
-                                error!("failed sending broker message to channel!");
-                            };
-                        } else {
-                            error!("invalid payload for message!");
-                        }
-                        //channel.basic_ack(message.delivery_tag, false)
-                        future::ok(())
-                    })
-            })
-        }).map_err(|_| Error::generic("failed connecting!"))
     }
 }
 
-impl Drop for Consumer {
-    fn drop(&mut self) {
-        debug!("dropping consumer for [{}]", self.subject.bright_green());
-        let guard = self.channel.lock().unwrap();
-        if let Some(ref channel) = *guard {
-            tokio::spawn(channel.close(0, "").map_err(|_| {}));
+#[derive(Clone)]
+struct BrokerSession {
+    session: Arc<Mutex<Session>>,
+    session_number: u32,
+    consumers: Arc<Mutex<HashMap<String, Consumer>>>,
+    subject_to_subscription_id_lookup: Arc<Mutex<HashMap<String, String>>>,
+}
+
+impl BrokerSession {
+    fn on_connected(&mut self) {
+        info!("established broker session");
+    }
+
+    fn subscribe(&mut self, subject: String, sender: UnboundedSender<BrokerResponse>) {
+        let subscription_id = self
+            .session
+            .lock()
+            .unwrap()
+            .subscription(&subject)
+            .with(AckMode::Auto)
+            .with(
+                Header::new(
+                    HeaderName::from_str("x-expires"),
+                    DEFAULT_QUEUE_EXPIRATION
+                )
+            )
+            .start();
+
+        let consumer = Consumer::new(subject.clone(), subscription_id.clone(), sender);
+        self.subject_to_subscription_id_lookup.lock().unwrap().insert(subject, subscription_id.clone());
+        self.consumers.lock().unwrap().insert(subscription_id, consumer);
+    }
+
+    fn unsubscribe(&mut self, subject: &str) {
+        if let Some(subscription_id) = self.subject_to_subscription_id_lookup.lock().unwrap().remove(subject) {
+            if let Some(consumer) = self.consumers.lock().unwrap().remove(&subscription_id) {
+                self
+                    .session
+                    .lock()
+                    .unwrap()
+                    .unsubscribe(&consumer.subscription_id);
+
+            } else {
+                error!("could not find consumer for subject [{}]", subject);
+            }
         }
-        if self.completer.unbounded_send(()).is_err() {
-            error!("failed sending completion signal!");
+    }
+
+    fn publish(&self, subject: &str, payload: &str, reply_to: &str) {
+        let destination = format!("/queue/{}", subject);
+        self
+            .session
+            .lock()
+            .unwrap()
+            .message(&destination, payload)
+            .with(
+                Header::new(
+                    HeaderName::from_str("x-expires"),
+                    DEFAULT_QUEUE_EXPIRATION
+                )
+            )
+            .with(
+                Header::new(
+                    HeaderName::from_str("expiration"),
+                    DEFAULT_MESSAGE_EXPIRATION
+                )
+            )
+            .with(
+                Header::new(
+                    HeaderName::from_str(REPLY_TO_HEADER_NAME),
+                    reply_to
+                )
+            )
+            .send();
+    }
+
+    fn on_message(&mut self, frame: Frame) {
+        if let Some(subscription_id) = frame.headers.get(SUBSCRIPTION) {
+            match self.consumers.lock().unwrap().get(subscription_id) {
+                Some(consumer) => {
+                    if let Some(reply_to) = frame.headers.get(HeaderName::from_str(REPLY_TO_HEADER_NAME))
+                    {
+                        let payload = std::str::from_utf8(&frame.body).unwrap();
+                        let response = BrokerResponse::Message {
+                            subject: consumer.subject.clone(),
+                            payload: payload.to_string(),
+                            reply_to: reply_to.to_string(),
+                        };
+                        if consumer.sender.unbounded_send(response).is_err() {
+                            error!("failed sending broker message to channel!");
+                        };
+                    } else {
+                        error!("reply_to header missing on message!");
+                    }
+                },
+                None => {
+                    error!("missing consumer for message frame [{}]", subscription_id);
+                }
+            }
+        }
+    }
+}
+
+impl Future for BrokerSession {
+    type Item = ();
+    type Error = std::io::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let msg = match try_ready!(self.session.lock().unwrap().poll()) {
+            None => {
+                return Ok(Async::Ready(()));
+            }
+            Some(msg) => msg,
         };
-    }
-}
 
-pub fn handle_post_message<T: AsyncRead + AsyncWrite + Sync + Send + 'static>(client: &lapin_futures::client::Client<T>, subject: String, payload: String, reply_to: String) -> impl Future<Item = (), Error = Error> {
-    client.create_channel().and_then(move |channel| {
-        let mut arguments = FieldTable::new();
-        arguments.insert("x-expires".to_string(), lapin_futures::types::AMQPValue::LongUInt(DEFAULT_QUEUE_EXPIRATION));
-        let mut queue_declare_options = QueueDeclareOptions::default();
-        queue_declare_options.durable = true;
-        channel.queue_declare(&subject[..], queue_declare_options, arguments)
-            .and_then(move |_| {
-                channel.basic_publish("", &subject[..], payload.into_bytes(),
-                    BasicPublishOptions::default(),
-                    BasicProperties::default().with_reply_to(reply_to).with_expiration(DEFAULT_MESSAGE_EXPIRATION.to_string())
-                ).and_then(move |_| {
-                    channel.close(0, "")
-                })
-            })
-    }).map(|_| ()).map_err(|_| Error::generic("failed connecting!"))
-}
-
-struct CompletionPact<S, C>
-    where S: Stream,
-          C: Stream,
-{
-    stream: S,
-    completer: C,
-}
-
-impl<S, C> CompletionPact<S, C> where S: Stream, C: Stream {
-    fn new(s: S, c: C) -> CompletionPact<S, C>
-    {
-        CompletionPact {
-            stream: s,
-            completer: c,
-        }
-    }
-}
-
-impl<S, C> Stream for CompletionPact<S, C> where S: Stream, C: Stream {
-    type Item = S::Item;
-    type Error = S::Error;
-
-    fn poll(&mut self) -> Poll<Option<S::Item>, S::Error> {
-        match self.completer.poll() {
-            Ok(Async::Ready(None)) |
-            Err(_) |
-            Ok(Async::Ready(Some(_))) => {
-                Ok(Async::Ready(None))
-            },
-            Ok(Async::NotReady) => {
-                self.stream.poll()
-            },
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use common::crypto::{PublicKey, generate_keypair, Base58};
-    use secp256k1::Secp256k1;
-    use rand::OsRng;
-    use common::base58::*;
-
-    #[test]
-    fn base58check() {
-        let secp = Secp256k1::new();
-        let mut rng = OsRng::new().expect("OsRng");
-        let (secret_key, public_key) = secp.generate_keypair(&mut rng);
-        let base58_check = public_key.to_base58_check(vec![1,120]);
-        let base58 = public_key.to_base58();
-
-        println!("b58 : {}\nb58c: {}", base58, base58_check);
-
-        let public_key_base58 = PublicKey::from_base58(&base58).unwrap();
-        let public_key_base58_check = PublicKey::from_base58_check(&base58_check, 2).unwrap();
-
-        println!("{:?}\n{:?}\n{:?}\n", public_key, public_key_base58, public_key_base58_check);
-    }
-
-    fn vanity() {
-        let secp = Secp256k1::new();
-        let mut rng = OsRng::new().expect("OsRng");
-        for i in 0..10000000 {
-            let (secret_key, public_key) = secp.generate_keypair(&mut rng);
-            let public_key = public_key.to_base58();
-            if public_key.starts_with("box") || public_key.starts_with("grin") ||
-                public_key.starts_with("713") {
-                println!("{}\n{}", public_key, secret_key);
+        trace!("msg: {:?}", msg);
+        match msg {
+            SessionEvent::Connected => {
+                self.on_connected();
             }
-            if i % 1000000 == 0 {
-                println!("processed {} keys so far...", i);
+
+            SessionEvent::Message {
+                destination: _destination,
+                ack_mode: _ack_mode,
+                frame,
+            } => {
+                self.on_message(frame)
+            }
+
+            SessionEvent::Error(frame) => {
+                error!("session error event: {}", frame);
+            }
+
+            SessionEvent::Disconnected(reason) => {
+                warn!("session [{}] disconnected due to [{:?}]", self.session_number, reason);
+                return Ok(Async::Ready(()));
+            }
+
+            m => {
+                warn!("unexepcted msg: {:?}", m);
             }
         }
+
+        Ok(Async::NotReady)
     }
 }

@@ -1,17 +1,15 @@
-use super::Error;
-use sha2::{Sha256, Digest};
+use crate::error::{ErrorKind, Result};
+use sha2::{Digest, Sha256};
 
 const ALPHABET: &'static [u8] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
 const B58_DIGITS_MAP: &'static [i8] = &[
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-    -1, 0, 1, 2, 3, 4, 5, 6, 7, 8,-1,-1,-1,-1,-1,-1,
-    -1, 9,10,11,12,13,14,15,16,-1,17,18,19,20,21,-1,
-    22,23,24,25,26,27,28,29,30,31,32,-1,-1,-1,-1,-1,
-    -1,33,34,35,36,37,38,39,40,41,42,43,-1,44,45,46,
-    47,48,49,50,51,52,53,54,55,56,57,-1,-1,-1,-1,-1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, -1, -1, -1, -1, -1, -1, -1, 9, 10, 11, 12, 13, 14, 15, 16, -1,
+    17, 18, 19, 20, 21, -1, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, -1, -1, -1, -1, -1, -1, 33,
+    34, 35, 36, 37, 38, 39, 40, 41, 42, 43, -1, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56,
+    57, -1, -1, -1, -1, -1,
 ];
 
 /// A trait for converting a value to base58 encoded string.
@@ -24,8 +22,8 @@ pub trait ToBase58 {
 /// A trait for converting base58 encoded values.
 pub trait FromBase58 {
     /// Convert a value of `self`, interpreted as base58 encoded data, into an owned vector of bytes, returning a vector.
-    fn from_base58(&self) -> Result<Vec<u8>, Error>;
-    fn from_base58_check(&self, version_bytes: usize) -> Result<(Vec<u8>, Vec<u8>), Error>;
+    fn from_base58(&self) -> Result<Vec<u8>>;
+    fn from_base58_check(&self, version_bytes: usize) -> Result<(Vec<u8>, Vec<u8>)>;
 }
 
 impl ToBase58 for [u8] {
@@ -47,7 +45,7 @@ impl ToBase58 for [u8] {
                 carry /= 58;
 
                 // in original trezor implementation it was underflowing
-                if j  > 0 {
+                if j > 0 {
                     j -= 1;
                 }
             }
@@ -80,7 +78,7 @@ impl ToBase58 for [u8] {
 }
 
 impl FromBase58 for str {
-    fn from_base58(&self) -> Result<Vec<u8>, Error> {
+    fn from_base58(&self) -> Result<Vec<u8>> {
         let mut bin = [0u8; 132];
         let mut out = [0u32; (132 + 3) / 4];
         let bytesleft = (bin.len() % 4) as u8;
@@ -96,12 +94,12 @@ impl FromBase58 for str {
         while i < self.len() {
             if (b58[i] & 0x80) != 0 {
                 // High-bit set on invalid digit
-                return Err(Error::InvalidBase58Character(b58[i] as char, i));
+                Err(ErrorKind::InvalidBase58Character(b58[i] as char, i))?;
             }
 
             if B58_DIGITS_MAP[b58[i] as usize] == -1 {
                 // // Invalid base58 digit
-                return Err(Error::InvalidBase58Character(b58[i] as char, i));
+                Err(ErrorKind::InvalidBase58Character(b58[i] as char, i))?;
             }
 
             let mut c = B58_DIGITS_MAP[b58[i] as usize] as u64;
@@ -115,12 +113,12 @@ impl FromBase58 for str {
 
             if c != 0 {
                 // Output number too big (carry to the next int32)
-                return Err(Error::InvalidBase58Length);
+                Err(ErrorKind::InvalidBase58Length)?;
             }
 
             if (out[0] & zeromask) != 0 {
                 // Output number too big (last int32 filled too far)
-                return Err(Error::InvalidBase58Length);
+                Err(ErrorKind::InvalidBase58Length)?;
             }
 
             i += 1;
@@ -135,7 +133,7 @@ impl FromBase58 for str {
             1 => {
                 j = 1;
                 (out[0] & 0xff) as u8
-            },
+            }
             _ => {
                 i = 0;
                 bin[0]
@@ -155,18 +153,21 @@ impl FromBase58 for str {
         Ok(bin[leading_zeros - zcount..].to_vec())
     }
 
-    fn from_base58_check(&self, version_bytes: usize) -> Result<(Vec<u8>, Vec<u8>), Error> {
+    fn from_base58_check(&self, version_bytes: usize) -> Result<(Vec<u8>, Vec<u8>)> {
         let mut payload: Vec<u8> = self.from_base58()?;
         if payload.len() < 5 {
-            return Err(Error::InvalidBase58Checksum)
+            Err(ErrorKind::InvalidBase58Checksum)?;
         }
         let checksum_index = payload.len() - 4;
         let provided_checksum = payload.split_off(checksum_index);
         let checksum = double_sha256(&payload)[..4].to_vec();
         if checksum != provided_checksum {
-            return Err(Error::InvalidBase58Checksum)
+            Err(ErrorKind::InvalidBase58Checksum)?;
         }
-        Ok((payload[..version_bytes].to_vec(), payload[version_bytes..].to_vec()))
+        Ok((
+            payload[..version_bytes].to_vec(),
+            payload[version_bytes..].to_vec(),
+        ))
     }
 }
 

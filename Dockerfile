@@ -1,5 +1,16 @@
 FROM rust:1.32.0 as builder
 
+RUN set -ex && \
+    apt-get update && \
+    apt-get --no-install-recommends --yes install \
+    clang \
+    libclang-dev \
+    llvm-dev \
+    libncurses5 \
+    libncursesw5 \
+    cmake \
+    git
+
 # create a new empty shell project
 RUN USER=root cargo new --bin grinbox
 WORKDIR /grinbox
@@ -7,6 +18,7 @@ WORKDIR /grinbox
 # copy over your manifests
 COPY ./Cargo.lock ./Cargo.lock
 COPY ./Cargo.toml ./Cargo.toml
+COPY ./grinboxlib ./grinboxlib
 
 # this build step will cache your dependencies
 RUN cargo build --release

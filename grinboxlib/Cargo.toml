@@ -1,0 +1,27 @@
+[package]
+name = "grinboxlib"
+version = "1.0.1"
+authors = ["vault713 devs"]
+description = "A library that encapsulates grinbox integration."
+keywords = [ "grinbox", "vault713", "grin", "mimblewimble", "rust", "crypto", "cryptocurrency", "wallet713" ]
+license = "Apache-2.0"
+readme = "README.md"
+edition = "2018"
+
+[dependencies]
+colored = "1.7"
+failure = "0.1"
+log = "0.4"
+parking_lot = {version = "0.6"}
+rand = "0.5"
+regex = "1"
+ring = "0.13"
+serde = "1.0"
+serde_derive = "1.0"
+serde_json = "1.0"
+sha2 = "0.7"
+ws = { version="0.7", features=["ssl"] }
+
+grin_secp256k1zkp = { version = "0.7.4", features = ["bullet-proof-sizing"]}
+grin_core = { git = "https://github.com/mimblewimble/grin" }
+grin_wallet = { git = "https://github.com/mimblewimble/grin" }
