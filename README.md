@@ -25,7 +25,7 @@ Assuming Alice wants to send Bob 50 grins using the relay:
 ## Functionality
 
 * Written in Rust, 713.grinbox utilises websockets to communicate with relay users.
-* Relay server federation is supported, allowing you to run your own 713.grinbox server and be accessible as `publickey@yourdomain.com`.
+* Self-hosting is supported, allowing you to run your own 713.grinbox server and be accessible as `publickey@yourdomain.com`.
 
 ## Getting started
 
