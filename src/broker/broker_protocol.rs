@@ -3,11 +3,12 @@ use futures::sync::mpsc::UnboundedSender;
 #[derive(Debug)]
 pub enum BrokerRequest {
     Subscribe {
+        id: String,
         subject: String,
         response_sender: UnboundedSender<BrokerResponse>,
     },
     Unsubscribe {
-        subject: String,
+        id: String,
     },
     PostMessage {
         subject: String,

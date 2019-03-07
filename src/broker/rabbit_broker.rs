@@ -58,7 +58,7 @@ impl Broker {
                 session: Arc::new(Mutex::new(session)),
                 session_number: 0,
                 consumers: Arc::new(Mutex::new(HashMap::new())),
-                subject_to_subscription_id_lookup: Arc::new(Mutex::new(HashMap::new())),
+                subject_to_consumer_id_lookup: Arc::new(Mutex::new(HashMap::new())),
             };
 
             let mut session_clone = session.clone();
@@ -66,11 +66,11 @@ impl Broker {
             let request_loop = rx
                 .for_each(move |request| {
                     match request {
-                        BrokerRequest::Subscribe { subject, response_sender } => {
-                            session_clone.subscribe(subject.clone(), response_sender.clone());
+                        BrokerRequest::Subscribe { id, subject, response_sender } => {
+                            session_clone.subscribe(id, subject.clone(), response_sender.clone());
                         },
-                        BrokerRequest::Unsubscribe { subject } => {
-                            session_clone.unsubscribe(&subject);
+                        BrokerRequest::Unsubscribe { id } => {
+                            session_clone.unsubscribe(&id);
                         },
                         BrokerRequest::PostMessage { subject, payload, reply_to } => {
                             session_clone.publish(&subject, &payload, &reply_to);
@@ -115,7 +115,7 @@ struct BrokerSession {
     session: Arc<Mutex<Session>>,
     session_number: u32,
     consumers: Arc<Mutex<HashMap<String, Consumer>>>,
-    subject_to_subscription_id_lookup: Arc<Mutex<HashMap<String, String>>>,
+    subject_to_consumer_id_lookup: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl BrokerSession {
@@ -123,7 +123,9 @@ impl BrokerSession {
         info!("established broker session");
     }
 
-    fn subscribe(&mut self, subject: String, sender: UnboundedSender<BrokerResponse>) {
+    fn subscribe(&mut self, id: String, subject: String, sender: UnboundedSender<BrokerResponse>) {
+        self.unsubscribe_by_subject(&subject);
+
         let subscription_id = self
             .session
             .lock()
@@ -139,13 +141,13 @@ impl BrokerSession {
             .start();
 
         let consumer = Consumer::new(subject.clone(), subscription_id.clone(), sender);
-        self.subject_to_subscription_id_lookup.lock().unwrap().insert(subject, subscription_id.clone());
-        self.consumers.lock().unwrap().insert(subscription_id, consumer);
+        self.subject_to_consumer_id_lookup.lock().unwrap().insert(subject, id.clone());
+        self.consumers.lock().unwrap().insert(id, consumer);
     }
 
-    fn unsubscribe(&mut self, subject: &str) {
-        if let Some(subscription_id) = self.subject_to_subscription_id_lookup.lock().unwrap().remove(subject) {
-            if let Some(consumer) = self.consumers.lock().unwrap().remove(&subscription_id) {
+    fn unsubscribe_by_subject(&mut self, subject: &str) {
+        if let Some(consumer_id) = self.subject_to_consumer_id_lookup.lock().unwrap().remove(subject) {
+            if let Some(consumer) = self.consumers.lock().unwrap().remove(&consumer_id) {
                 self
                     .session
                     .lock()
@@ -154,6 +156,21 @@ impl BrokerSession {
 
             } else {
                 error!("could not find consumer for subject [{}]", subject);
+            }
+        }
+    }
+
+    fn unsubscribe(&mut self, id: &str) {
+        if let Some(consumer) = self.consumers.lock().unwrap().remove(id) {
+            if let Some(_) = self.subject_to_consumer_id_lookup.lock().unwrap().remove(&consumer.subject) {
+                self
+                    .session
+                    .lock()
+                    .unwrap()
+                    .unsubscribe(&consumer.subscription_id);
+
+            } else {
+                error!("could not find consumer for id [{}]", id);
             }
         }
     }

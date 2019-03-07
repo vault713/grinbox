@@ -54,7 +54,7 @@ impl Drop for AsyncServer {
             if self
                 .nats_sender
                 .unbounded_send(BrokerRequest::Unsubscribe {
-                    subject: subject.clone(),
+                    id: self.id.clone(),
                 })
                 .is_err()
             {
@@ -189,6 +189,7 @@ impl AsyncServer {
                     if self
                         .nats_sender
                         .unbounded_send(BrokerRequest::Subscribe {
+                            id: self.id.clone(),
                             subject: address.clone(),
                             response_sender: res_tx,
                         })
@@ -226,7 +227,7 @@ impl AsyncServer {
                 if self
                     .nats_sender
                     .unbounded_send(BrokerRequest::Unsubscribe {
-                        subject: address.clone(),
+                        id: self.id.clone(),
                     })
                     .is_err()
                 {
