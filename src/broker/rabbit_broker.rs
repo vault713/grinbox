@@ -59,6 +59,7 @@ impl Broker {
                 session_number: 0,
                 consumers: Arc::new(Mutex::new(HashMap::new())),
                 subject_to_consumer_id_lookup: Arc::new(Mutex::new(HashMap::new())),
+                subscription_id_to_consumer_id_lookup: Arc::new(Mutex::new(HashMap::new())),
             };
 
             let mut session_clone = session.clone();
@@ -116,6 +117,7 @@ struct BrokerSession {
     session_number: u32,
     consumers: Arc<Mutex<HashMap<String, Consumer>>>,
     subject_to_consumer_id_lookup: Arc<Mutex<HashMap<String, String>>>,
+    subscription_id_to_consumer_id_lookup: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl BrokerSession {
@@ -142,12 +144,14 @@ impl BrokerSession {
 
         let consumer = Consumer::new(subject.clone(), subscription_id.clone(), sender);
         self.subject_to_consumer_id_lookup.lock().unwrap().insert(subject, id.clone());
+        self.subscription_id_to_consumer_id_lookup.lock().unwrap().insert(subscription_id, id.clone());
         self.consumers.lock().unwrap().insert(id, consumer);
     }
 
     fn unsubscribe_by_subject(&mut self, subject: &str) {
         if let Some(consumer_id) = self.subject_to_consumer_id_lookup.lock().unwrap().remove(subject) {
             if let Some(consumer) = self.consumers.lock().unwrap().remove(&consumer_id) {
+                self.subscription_id_to_consumer_id_lookup.lock().unwrap().remove(&consumer.subscription_id);
                 self
                     .session
                     .lock()
@@ -163,6 +167,7 @@ impl BrokerSession {
     fn unsubscribe(&mut self, id: &str) {
         if let Some(consumer) = self.consumers.lock().unwrap().remove(id) {
             if let Some(_) = self.subject_to_consumer_id_lookup.lock().unwrap().remove(&consumer.subject) {
+                self.subscription_id_to_consumer_id_lookup.lock().unwrap().remove(&consumer.subscription_id);
                 self
                     .session
                     .lock()
@@ -205,23 +210,30 @@ impl BrokerSession {
 
     fn on_message(&mut self, frame: Frame) {
         if let Some(subscription_id) = frame.headers.get(SUBSCRIPTION) {
-            match self.consumers.lock().unwrap().get(subscription_id) {
-                Some(consumer) => {
-                    if let Some(reply_to) = frame.headers.get(HeaderName::from_str(REPLY_TO_HEADER_NAME))
-                    {
-                        let payload = std::str::from_utf8(&frame.body).unwrap();
-                        let response = BrokerResponse::Message {
-                            subject: consumer.subject.clone(),
-                            payload: payload.to_string(),
-                            reply_to: reply_to.to_string(),
-                        };
-                        if consumer.sender.unbounded_send(response).is_err() {
-                            error!("failed sending broker message to channel!");
-                        };
-                    } else {
-                        error!("reply_to header missing on message!");
+            match self.subscription_id_to_consumer_id_lookup.lock().unwrap().get(subscription_id) {
+                Some(consumer_id) => {
+                    match self.consumers.lock().unwrap().get(consumer_id) {
+                        Some(consumer) => {
+                            if let Some(reply_to) = frame.headers.get(HeaderName::from_str(REPLY_TO_HEADER_NAME))
+                                {
+                                    let payload = std::str::from_utf8(&frame.body).unwrap();
+                                    let response = BrokerResponse::Message {
+                                        subject: consumer.subject.clone(),
+                                        payload: payload.to_string(),
+                                        reply_to: reply_to.to_string(),
+                                    };
+                                    if consumer.sender.unbounded_send(response).is_err() {
+                                        error!("failed sending broker message to channel!");
+                                    };
+                                } else {
+                                error!("reply_to header missing on message!");
+                            }
+                        },
+                        None => {
+                            error!("missing consumer for message frame [{}]", subscription_id);
+                        }
                     }
-                },
+                }
                 None => {
                     error!("missing consumer for message frame [{}]", subscription_id);
                 }
