@@ -14,6 +14,7 @@ pub enum BrokerRequest {
         subject: String,
         payload: String,
         reply_to: String,
+        message_expiration_in_seconds: Option<u32>,
     },
 }
 

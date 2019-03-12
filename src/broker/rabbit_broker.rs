@@ -23,7 +23,7 @@ use crate::broker::stomp::frame::Frame;
 type Session = crate::broker::stomp::session::Session<TcpStream>;
 
 const DEFAULT_QUEUE_EXPIRATION: &str = "86400000";
-const DEFAULT_MESSAGE_EXPIRATION: &str = "86400000";
+const DEFAULT_MESSAGE_EXPIRATION: u32 = 86400;
 const REPLY_TO_HEADER_NAME: &str = "grinbox-reply-to";
 
 pub struct Broker {
@@ -73,8 +73,8 @@ impl Broker {
                         BrokerRequest::Unsubscribe { id } => {
                             session_clone.unsubscribe(&id);
                         },
-                        BrokerRequest::PostMessage { subject, payload, reply_to } => {
-                            session_clone.publish(&subject, &payload, &reply_to);
+                        BrokerRequest::PostMessage { subject, payload, reply_to, message_expiration_in_seconds } => {
+                            session_clone.publish(&subject, &payload, &reply_to, message_expiration_in_seconds);
                         },
                     }
                     Ok(())
@@ -180,8 +180,13 @@ impl BrokerSession {
         }
     }
 
-    fn publish(&self, subject: &str, payload: &str, reply_to: &str) {
+    fn publish(&self, subject: &str, payload: &str, reply_to: &str, message_expiration_in_seconds: Option<u32>) {
         let destination = format!("/queue/{}", subject);
+        let message_expiration = match message_expiration_in_seconds {
+            Some(message_expiration_in_seconds @ 1 ... 86400) => format!("{}", message_expiration_in_seconds * 1000),
+            _ => format!("{}", DEFAULT_MESSAGE_EXPIRATION * 1000),
+        };
+
         self
             .session
             .lock()
@@ -196,7 +201,7 @@ impl BrokerSession {
             .with(
                 Header::new(
                     HeaderName::from_str("expiration"),
-                    DEFAULT_MESSAGE_EXPIRATION
+                    &message_expiration
                 )
             )
             .with(

@@ -247,6 +247,7 @@ impl AsyncServer {
         to: String,
         str: String,
         signature: String,
+        message_expiration_in_seconds: Option<u32>,
     ) -> GrinboxResponse {
         let from_address = GrinboxAddress::from_str_raw(&from);
         if from_address.is_err() {
@@ -292,6 +293,7 @@ impl AsyncServer {
                     subject: to_address.public_key,
                     payload: signed_payload,
                     reply_to: from_address.stripped(),
+                    message_expiration_in_seconds,
                 })
                 .is_err()
                 {
@@ -301,11 +303,11 @@ impl AsyncServer {
 
             AsyncServer::ok()
         } else {
-            self.post_slate_federated(&from_address, &to_address, str, signature)
+            self.post_slate_federated(&from_address, &to_address, str, signature, message_expiration_in_seconds)
         }
     }
 
-    fn post_slate_federated(&self, from_address: &GrinboxAddress, to_address: &GrinboxAddress, str: String, signature: String) -> GrinboxResponse {
+    fn post_slate_federated(&self, from_address: &GrinboxAddress, to_address: &GrinboxAddress, str: String, signature: String, message_expiration_in_seconds: Option<u32>) -> GrinboxResponse {
         let url = match self.grinbox_protocol_unsecure {
             false => format!(
                 "wss://{}:{}",
@@ -335,6 +337,7 @@ impl AsyncServer {
                             to: to_address.stripped(),
                             str: str.clone(),
                             signature: signature.clone(),
+                            message_expiration_in_seconds,
                         };
 
                         sender
@@ -410,7 +413,8 @@ impl Handler for AsyncServer {
                     to,
                     str,
                     signature,
-                } => self.post_slate(from, to, str, signature),
+                    message_expiration_in_seconds,
+                } => self.post_slate(from, to, str, signature, message_expiration_in_seconds),
                 GrinboxRequest::Unsubscribe { address } => self.unsubscribe(address),
             }
         } else {

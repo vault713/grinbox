@@ -14,6 +14,7 @@ pub enum GrinboxRequest {
         to: String,
         str: String,
         signature: String,
+        message_expiration_in_seconds: Option<u32>,
     },
     Unsubscribe {
         address: String,
@@ -44,6 +45,7 @@ impl Display for GrinboxRequest {
                 ref to,
                 str: _,
                 signature: _,
+                message_expiration_in_seconds: _,
             } => write!(
                 f,
                 "{} from {} to {}",
